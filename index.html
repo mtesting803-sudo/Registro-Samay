@@ -172,10 +172,45 @@
                             <label class="block text-[10px] font-bold text-slate-400 uppercase">Fecha</label>
                             <input type="date" id="v-fecha" required class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none">
                         </div>
+
+                        <!-- Selector de producto desde stock -->
                         <div class="space-y-1.5">
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase">Producto / Descripción</label>
-                            <input type="text" id="v-producto" required class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Ej: Maní Confitado">
+                            <div class="flex justify-between items-center">
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase">Producto</label>
+                                <button type="button" id="btn-modo-producto" onclick="toggleModoProducto()" class="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                                    <i class="fa-solid fa-pen"></i> <span id="btn-modo-producto-text">Producto nuevo</span>
+                                </button>
+                            </div>
+
+                            <!-- Modo selector (default) -->
+                            <div id="modo-selector">
+                                <select id="v-producto-select" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" onchange="onProductoSeleccionado()">
+                                    <option value="">— Selecciona un producto —</option>
+                                </select>
+                                <div id="stock-info" class="mt-2 p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-[11px] hidden">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-slate-400">Stock disponible:</span>
+                                        <span id="stock-info-cantidad" class="font-bold text-emerald-400">0 un.</span>
+                                    </div>
+                                    <div class="flex justify-between items-center mt-1">
+                                        <span class="text-slate-400">Gramaje:</span>
+                                        <span id="stock-info-gramaje" class="font-bold text-white">-</span>
+                                    </div>
+                                </div>
+                                <p id="sin-stock-msg" class="mt-2 text-[10px] text-amber-400 hidden flex items-center gap-1">
+                                    <i class="fa-solid fa-triangle-exclamation"></i> No tienes productos en stock. Ingresa uno nuevo con el botón de arriba.
+                                </p>
+                            </div>
+
+                            <!-- Modo producto nuevo (input libre) -->
+                            <div id="modo-libre" class="hidden">
+                                <input type="text" id="v-producto" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Ej: Maní Confitado">
+                                <p class="mt-1.5 text-[10px] text-slate-500">⚠️ Si el producto no coincide exactamente con el del stock, no se descontará.</p>
+                            </div>
+
+                            <input type="hidden" id="v-producto-hidden">
                         </div>
+
                         <div class="grid grid-cols-2 gap-4">
                             <div class="space-y-1.5">
                                 <label class="block text-[10px] font-bold text-slate-400 uppercase">Gramaje</label>
@@ -183,7 +218,8 @@
                             </div>
                             <div class="space-y-1.5">
                                 <label class="block text-[10px] font-bold text-slate-400 uppercase">Cantidad</label>
-                                <input type="number" id="v-cantidad" required min="1" value="1" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="1">
+                                <input type="number" id="v-cantidad" required min="1" value="1" oninput="validarCantidad()" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="1">
+                                <p id="cantidad-warning" class="text-[10px] text-amber-400 hidden">⚠️ Vendes más de lo que hay en stock</p>
                             </div>
                         </div>
                         <div class="space-y-1.5">
@@ -195,7 +231,8 @@
                         </div>
                         <div class="space-y-1.5">
                             <label class="block text-[10px] font-bold text-slate-400 uppercase">Cliente (A quién le vendes)</label>
-                            <input type="text" id="v-cliente" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Nombre del cliente">
+                            <input type="text" id="v-cliente" list="lista-clientes" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 text-sm focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Nombre del cliente">
+                            <datalist id="lista-clientes"></datalist>
                         </div>
                         <div class="space-y-1.5">
                             <label class="block text-[10px] font-bold text-slate-400 uppercase">Método de Pago</label>
@@ -539,13 +576,52 @@
         document.getElementById('form-venta').addEventListener('submit', (e) => {
             e.preventDefault();
             const metodo = document.querySelector('input[name="v-metodo"]:checked').value;
+
+            // Determinar producto según modo (selector o libre)
+            const esModoLibre = document.getElementById('modo-libre').classList.contains('hidden') === false;
+            let producto, gramaje;
+
+            if (esModoLibre) {
+                producto = document.getElementById('v-producto').value.trim();
+                gramaje = document.getElementById('v-gramaje').value.trim();
+                if (!producto) {
+                    showMsg('Falta producto', 'Escribe el nombre del producto.', true);
+                    return;
+                }
+            } else {
+                const select = document.getElementById('v-producto-select');
+                const selectedValue = select.value;
+                if (!selectedValue) {
+                    showMsg('Selecciona producto', 'Elige un producto del listado o usa "Producto nuevo".', true);
+                    return;
+                }
+                // El value del option es "producto|||gramaje"
+                const [p, g] = selectedValue.split('|||');
+                producto = p;
+                gramaje = g || document.getElementById('v-gramaje').value.trim();
+                // Sobrescribimos el gramaje del input con el del stock (coincidencia exacta)
+                gramaje = g || '';
+            }
+
+            const cantidad = parseInt(document.getElementById('v-cantidad').value) || 0;
+
+            // Validación: avisar si vende más del stock disponible (solo en modo selector)
+            if (!esModoLibre) {
+                const stockDisp = calcularStockProducto(producto, gramaje);
+                if (cantidad > stockDisp && stockDisp >= 0) {
+                    if (!confirm(`Estás vendiendo ${cantidad} unidades pero solo tienes ${stockDisp} en stock.\n\n¿Quieres registrar la venta de todas formas? (El stock quedará negativo)`)) {
+                        return;
+                    }
+                }
+            }
+
             const data = {
                 id: uuid(),
                 tipo: 'Venta',
                 fecha: document.getElementById('v-fecha').value,
-                producto: document.getElementById('v-producto').value.trim(),
-                gramaje: document.getElementById('v-gramaje').value.trim(),
-                cantidad: parseInt(document.getElementById('v-cantidad').value) || 0,
+                producto: producto,
+                gramaje: gramaje,
+                cantidad: cantidad,
                 monto: parseInt(document.getElementById('v-monto').value) || 0,
                 cliente: document.getElementById('v-cliente').value.trim() || 'Consumidor Final',
                 metodoPago: metodo,
@@ -558,6 +634,14 @@
                 e.target.reset();
                 document.getElementById('v-fecha').value = today();
                 document.getElementById('v-cantidad').value = 1;
+                // Volver al modo selector y repoblar
+                if (!esModoLibre) {
+                    document.getElementById('v-producto-select').value = '';
+                    document.getElementById('stock-info').classList.add('hidden');
+                } else {
+                    // Si estaba en modo libre, volver al selector para la próxima
+                    toggleModoProducto();
+                }
                 renderDashboard();
                 showMsg('Venta registrada', metodo === 'Fiado' ? 'Venta fiada agregada a cuentas por cobrar.' : 'Venta registrada correctamente.');
                 switchTab('panel');
@@ -725,9 +809,159 @@
                 }).join('');
             }
 
-            // Actualizar datalist de productos
+            // Actualizar datalist de productos (para form de Stock) y selector de Venta
             const productos = [...new Set(movimientos.filter(m => m.tipo === 'Stock' || m.tipo === 'Venta').map(m => m.producto).filter(Boolean))];
             document.getElementById('lista-productos').innerHTML = productos.map(p => `<option value="${p}">`).join('');
+
+            // Poblar selector de productos en Venta (con stock calculado)
+            poblarSelectorProductos(inventario);
+            // Poblar lista de clientes para autocompletar
+            poblarClientes();
+        }
+
+        // ============ SELECTOR DE PRODUCTOS EN VENTA ============
+        let stockGlobalRef = {}; // referencia al inventario calculado
+
+        function poblarSelectorProductos(inventario) {
+            // inventario viene como { "producto|||gramaje": { producto, gramaje, qty, valor } }
+            stockGlobalRef = inventario;
+            const select = document.getElementById('v-producto-select');
+            const valorActual = select.value; // preservar selección si existe
+
+            // Solo mostrar productos con stock > 0 (los agotados no se pueden vender)
+            const entries = Object.entries(inventario)
+                .filter(([k, v]) => v.qty > 0)
+                .sort((a, b) => a[1].producto.localeCompare(b[1].producto, 'es'));
+
+            if (entries.length === 0) {
+                select.innerHTML = '<option value="">— No hay productos en stock —</option>';
+                document.getElementById('sin-stock-msg').classList.remove('hidden');
+                document.getElementById('stock-info').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('sin-stock-msg').classList.add('hidden');
+            let html = '<option value="">— Selecciona un producto —</option>';
+            entries.forEach(([k, v]) => {
+                const label = `${v.producto}${v.gramaje ? ' (' + v.gramaje + ')' : ''} — ${v.qty} un.`;
+                html += `<option value="${escapeAttr(k)}">${escapeHtml(label)}</option>`;
+            });
+            select.innerHTML = html;
+
+            // Restaurar selección si aún existe
+            if (valorActual && [...select.options].some(o => o.value === valorActual)) {
+                select.value = valorActual;
+                onProductoSeleccionado();
+            }
+        }
+
+        function onProductoSeleccionado() {
+            const select = document.getElementById('v-producto-select');
+            const value = select.value;
+            const stockInfo = document.getElementById('stock-info');
+
+            if (!value) {
+                stockInfo.classList.add('hidden');
+                document.getElementById('v-gramaje').value = '';
+                validarCantidad();
+                return;
+            }
+
+            const item = stockGlobalRef[value];
+            if (!item) {
+                stockInfo.classList.add('hidden');
+                return;
+            }
+
+            // Autocompletar gramaje (read-only visual: lo dejamos editable pero sugerido)
+            document.getElementById('v-gramaje').value = item.gramaje || '';
+
+            // Mostrar info de stock
+            document.getElementById('stock-info-cantidad').innerText = `${item.qty} un.`;
+            document.getElementById('stock-info-gramaje').innerText = item.gramaje || '-';
+            const colorClass = item.qty > 5 ? 'text-emerald-400' : (item.qty > 0 ? 'text-amber-400' : 'text-red-400');
+            document.getElementById('stock-info-cantidad').className = `font-bold ${colorClass}`;
+            stockInfo.classList.remove('hidden');
+
+            validarCantidad();
+        }
+
+        function validarCantidad() {
+            const cantidad = parseInt(document.getElementById('v-cantidad').value) || 0;
+            const select = document.getElementById('v-producto-select');
+            const warning = document.getElementById('cantidad-warning');
+            const esModoLibre = document.getElementById('modo-libre').classList.contains('hidden') === false;
+
+            if (esModoLibre || !select.value) {
+                warning.classList.add('hidden');
+                return;
+            }
+            const item = stockGlobalRef[select.value];
+            if (!item) {
+                warning.classList.add('hidden');
+                return;
+            }
+            if (cantidad > item.qty) {
+                warning.classList.remove('hidden');
+                warning.innerText = `⚠️ Solo tienes ${item.qty} en stock. Estás vendiendo ${cantidad}.`;
+            } else {
+                warning.classList.add('hidden');
+            }
+        }
+
+        function toggleModoProducto() {
+            const modoSelector = document.getElementById('modo-selector');
+            const modoLibre = document.getElementById('modo-libre');
+            const btnText = document.getElementById('btn-modo-producto-text');
+            const btnIcon = document.querySelector('#btn-modo-producto i');
+
+            if (modoLibre.classList.contains('hidden')) {
+                // Cambiar a modo libre
+                modoSelector.classList.add('hidden');
+                modoLibre.classList.remove('hidden');
+                btnText.innerText = 'Usar selector';
+                btnIcon.className = 'fa-solid fa-list';
+                document.getElementById('v-producto').focus();
+            } else {
+                // Cambiar a modo selector
+                modoLibre.classList.add('hidden');
+                modoSelector.classList.remove('hidden');
+                btnText.innerText = 'Producto nuevo';
+                btnIcon.className = 'fa-solid fa-pen';
+                // Limpiar input libre
+                document.getElementById('v-producto').value = '';
+                onProductoSeleccionado();
+            }
+        }
+
+        function calcularStockProducto(producto, gramaje) {
+            let qty = 0;
+            const p = (producto || '').trim();
+            const g = (gramaje || '').trim();
+            movimientos.forEach(m => {
+                if (m.tipo === 'Stock' && (m.producto || '').trim() === p && (m.gramaje || '').trim() === g) {
+                    qty += Number(m.cantidad || 0);
+                } else if (m.tipo === 'Venta' && (m.producto || '').trim() === p && (m.gramaje || '').trim() === g) {
+                    qty -= Number(m.cantidad || 0);
+                }
+            });
+            return qty;
+        }
+
+        function poblarClientes() {
+            const clientes = [...new Set(
+                movimientos.filter(m => m.tipo === 'Venta' && m.cliente && m.cliente !== 'Consumidor Final')
+                    .map(m => m.cliente)
+            )].sort();
+            document.getElementById('lista-clientes').innerHTML = clientes.map(c => `<option value="${escapeAttr(c)}">`).join('');
+        }
+
+        // Helpers de escape para evitar romper HTML con caracteres especiales
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+        function escapeAttr(s) {
+            return String(s).replace(/"/g, '&quot;');
         }
 
         // ============ COBRAR FIADO ============
